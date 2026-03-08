@@ -102,6 +102,39 @@ class TestReadLastUserPrompt:
         result = read_last_user_prompt(path)
         assert result == "Real prompt"
 
+    def test_skips_task_notification_tag(self, tmp_path: object) -> None:
+        from monitorator.session_prompt import read_last_user_prompt
+
+        lines = [
+            {"type": "user", "message": {"content": [{"type": "text", "text": "Fix the login bug"}]}},
+            {"type": "user", "message": {"content": [{"type": "text", "text": "<task-notification>\n<task-id>ae19cf2</task-id>\n</task-notification>"}]}},
+        ]
+        path = self._make_jsonl(tmp_path, lines)
+        result = read_last_user_prompt(path)
+        assert result == "Fix the login bug"
+
+    def test_skips_system_reminder_tag(self, tmp_path: object) -> None:
+        from monitorator.session_prompt import read_last_user_prompt
+
+        lines = [
+            {"type": "user", "message": {"content": [{"type": "text", "text": "Build the dashboard"}]}},
+            {"type": "user", "message": {"content": [{"type": "text", "text": "<system-reminder>Some reminder text</system-reminder>"}]}},
+        ]
+        path = self._make_jsonl(tmp_path, lines)
+        result = read_last_user_prompt(path)
+        assert result == "Build the dashboard"
+
+    def test_skips_any_xml_tag_message(self, tmp_path: object) -> None:
+        from monitorator.session_prompt import read_last_user_prompt
+
+        lines = [
+            {"type": "user", "message": {"content": [{"type": "text", "text": "Real user prompt"}]}},
+            {"type": "user", "message": {"content": [{"type": "text", "text": "<some-internal-tag>data</some-internal-tag>"}]}},
+        ]
+        path = self._make_jsonl(tmp_path, lines)
+        result = read_last_user_prompt(path)
+        assert result == "Real user prompt"
+
     def test_returns_none_for_no_user_messages(self, tmp_path: object) -> None:
         from monitorator.session_prompt import read_last_user_prompt
 

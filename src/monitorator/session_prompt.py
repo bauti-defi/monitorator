@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 _CACHE: dict[str, tuple[float, str | None]] = {}  # uuid → (mtime, prompt)
 
 _CHUNK_SIZE = 256 * 1024  # 256KB
 _MAX_READ = 1024 * 1024  # 1MB
-_SKIP_TAGS = ("<local-command>", "<command-name>")
+
+# Matches messages that start with an XML-style tag like <tag-name>
+_XML_TAG_RE = re.compile(r"^\s*<[a-zA-Z][\w-]*[ >/]")
 
 
 def mangle_cwd(cwd: str) -> str:
@@ -92,8 +95,8 @@ def read_last_user_prompt(jsonl_path: str) -> str | None:
         if user_text is None:
             continue
 
-        # Skip messages that are just internal tags
-        if any(user_text.strip().startswith(tag) for tag in _SKIP_TAGS):
+        # Skip messages that start with XML-like tags (system/internal messages)
+        if _XML_TAG_RE.match(user_text.strip()):
             continue
 
         return user_text
