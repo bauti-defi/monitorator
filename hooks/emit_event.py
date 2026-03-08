@@ -97,7 +97,7 @@ def main() -> None:
     except (json.JSONDecodeError, OSError):
         return
 
-    event_type: str = event.get("type", "")
+    event_type: str = event.get("hook_event_name", "") or event.get("type", "")
     session_id: str = event.get("session_id", "")
     cwd: str = event.get("cwd", "")
 
@@ -158,8 +158,9 @@ def main() -> None:
         state["status"] = "terminated"
 
     elif event_type == "Notification":
+        notification_type = event.get("notification_type", "")
         message = str(event.get("message", ""))
-        if "permission" in message.lower() or "Permission" in message:
+        if notification_type == "permission_prompt" or "permission" in message.lower():
             state["status"] = "waiting_permission"
 
     elif event_type == "SubagentStart":

@@ -220,6 +220,56 @@ class TestEmitEvent:
             data = json.loads((tmp_sessions_dir / "no-git-test.json").read_text())
             assert data.get("git_branch") is None
 
+    def test_hook_event_name_field_works(self, tmp_sessions_dir: Path) -> None:
+        """Claude Code sends hook_event_name, not type. Both must work."""
+        event = {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "hook-event-name-test",
+            "cwd": "/tmp/test-project",
+            "prompt": "Fix the login bug",
+        }
+        result = run_hook(event, tmp_sessions_dir)
+        assert result.returncode == 0
+        data = json.loads((tmp_sessions_dir / "hook-event-name-test.json").read_text())
+        assert data["status"] == "thinking"
+        assert data["last_prompt_summary"] == "Fix the login bug"
+        assert data["last_event"] == "UserPromptSubmit"
+
+    def test_hook_event_name_prefers_over_type(self, tmp_sessions_dir: Path) -> None:
+        """When both fields exist, hook_event_name takes precedence."""
+        event = {
+            "hook_event_name": "PreToolUse",
+            "type": "SessionStart",  # should be ignored
+            "session_id": "precedence-test",
+            "cwd": "/tmp",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+        }
+        result = run_hook(event, tmp_sessions_dir)
+        assert result.returncode == 0
+        data = json.loads((tmp_sessions_dir / "precedence-test.json").read_text())
+        assert data["status"] == "executing"
+        assert data["last_tool"] == "Bash"
+
+    def test_notification_permission_prompt_type(self, tmp_sessions_dir: Path) -> None:
+        """Real Claude Code notification uses hook_event_name and notification_type."""
+        run_hook({
+            "hook_event_name": "SessionStart",
+            "session_id": "notif-test",
+            "cwd": "/tmp",
+        }, tmp_sessions_dir)
+        event = {
+            "hook_event_name": "Notification",
+            "session_id": "notif-test",
+            "cwd": "/tmp",
+            "message": "Claude needs your permission to use Bash",
+            "notification_type": "permission_prompt",
+        }
+        result = run_hook(event, tmp_sessions_dir)
+        assert result.returncode == 0
+        data = json.loads((tmp_sessions_dir / "notif-test.json").read_text())
+        assert data["status"] == "waiting_permission"
+
     def test_completes_under_100ms(self, tmp_sessions_dir: Path) -> None:
         event = {
             "type": "SessionStart",
