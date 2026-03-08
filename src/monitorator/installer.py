@@ -37,8 +37,28 @@ class HookInstaller:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps(settings, indent=2) + "\n")
 
-    def _make_hook_entry(self) -> dict[str, str]:
-        return {"type": "command", "command": self._hook_command}
+    def _make_hook_entry(self) -> dict[str, object]:
+        """Create a matcher-based hook entry (new Claude Code format)."""
+        return {
+            "matcher": {},
+            "hooks": [{"type": "command", "command": self._hook_command}],
+        }
+
+    @staticmethod
+    def _entry_has_marker(entry: object) -> bool:
+        """Check if a hook entry (old or new format) contains our marker."""
+        if not isinstance(entry, dict):
+            return False
+        # New format: {"matcher": {}, "hooks": [{"type": "command", "command": "..."}]}
+        inner_hooks = entry.get("hooks")
+        if isinstance(inner_hooks, list):
+            for h in inner_hooks:
+                if isinstance(h, dict) and MARKER in h.get("command", ""):
+                    return True
+        # Old format: {"type": "command", "command": "..."}
+        if MARKER in entry.get("command", ""):
+            return True
+        return False
 
     def install(self) -> None:
         settings = self._read_settings()
@@ -61,8 +81,8 @@ class HookInstaller:
                 event_hooks = []
                 hooks[event] = event_hooks
 
-            # Remove existing monitorator hooks (idempotent)
-            event_hooks[:] = [h for h in event_hooks if MARKER not in h.get("command", "")]
+            # Remove existing monitorator hooks — both old and new format (idempotent)
+            event_hooks[:] = [h for h in event_hooks if not self._entry_has_marker(h)]
             event_hooks.append(entry)
 
         self._write_settings(settings)
@@ -76,7 +96,7 @@ class HookInstaller:
         for event in list(hooks.keys()):
             event_hooks = hooks[event]
             if isinstance(event_hooks, list):
-                event_hooks[:] = [h for h in event_hooks if MARKER not in h.get("command", "")]
+                event_hooks[:] = [h for h in event_hooks if not self._entry_has_marker(h)]
 
         self._write_settings(settings)
 
@@ -87,7 +107,7 @@ class HookInstaller:
             return False
         for event_hooks in hooks.values():
             if isinstance(event_hooks, list):
-                for h in event_hooks:
-                    if MARKER in h.get("command", ""):
+                for entry in event_hooks:
+                    if self._entry_has_marker(entry):
                         return True
         return False
