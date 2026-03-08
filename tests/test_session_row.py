@@ -223,7 +223,8 @@ class TestSessionRowColors:
     def test_different_indexes_get_different_project_colors(self) -> None:
         from monitorator.tui.session_row import SessionRow, SESSION_COLORS
 
-        session = make_merged(project="ProjA")
+        # Use IDLE status — palette colors only apply to non-full-row statuses
+        session = make_merged(project="ProjA", status=SessionStatus.IDLE, prompt=None)
         row1 = SessionRow(session)
         row1.update_index(1)
         row2 = SessionRow(session)
@@ -296,3 +297,67 @@ class TestSessionRowPermission:
         row = SessionRow(session)
         content = row._build_content()
         assert "EXEC" in content
+
+
+class TestSessionRowFullRowColoring:
+    """Entire row should be painted in the status color."""
+
+    def test_thinking_row_uses_green_for_project(self) -> None:
+        from monitorator.tui.session_row import SessionRow
+
+        session = make_merged(status=SessionStatus.THINKING, project="MyProject")
+        row = SessionRow(session)
+        row.update_index(1)
+        content = row._build_content()
+        # Project name should use green (#00ff66), not the palette color
+        assert "#00ff66" in content
+        assert "MyProject" in content
+
+    def test_thinking_row_has_blink_on_status(self) -> None:
+        from monitorator.tui.session_row import SessionRow
+
+        session = make_merged(status=SessionStatus.THINKING)
+        row = SessionRow(session)
+        content = row._build_content()
+        assert "blink" in content
+
+    def test_permission_row_uses_red_for_project(self) -> None:
+        from monitorator.tui.session_row import SessionRow
+
+        session = make_merged(status=SessionStatus.WAITING_PERMISSION, project="NeedsPerm")
+        row = SessionRow(session)
+        row.update_index(1)
+        content = row._build_content()
+        assert "#ff3333" in content
+        assert "NeedsPerm" in content
+
+    def test_terminated_row_uses_blue_for_project(self) -> None:
+        from monitorator.tui.session_row import SessionRow
+
+        session = make_merged(status=SessionStatus.TERMINATED, project="DoneProj")
+        row = SessionRow(session)
+        row.update_index(1)
+        content = row._build_content()
+        # Terminated should use blue
+        assert "#3399ff" in content
+        assert "DoneProj" in content
+
+    def test_executing_row_uses_green_for_project(self) -> None:
+        from monitorator.tui.session_row import SessionRow
+
+        session = make_merged(status=SessionStatus.EXECUTING, project="RunningProj")
+        row = SessionRow(session)
+        row.update_index(1)
+        content = row._build_content()
+        assert "#00ff66" in content
+
+    def test_idle_row_uses_palette_color_for_project(self) -> None:
+        from monitorator.tui.session_row import SessionRow, SESSION_COLORS
+
+        session = make_merged(status=SessionStatus.IDLE, project="IdleProj", prompt=None)
+        row = SessionRow(session)
+        row.update_index(1)
+        content = row._build_content()
+        # Idle should still use palette colors, not a status color
+        expected_color = SESSION_COLORS[0]
+        assert expected_color in content

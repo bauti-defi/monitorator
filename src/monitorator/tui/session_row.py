@@ -27,12 +27,13 @@ SESSION_COLORS: tuple[str, ...] = (
     "#ffff66",  # light yellow
 )
 
-# Status-specific decorators for the activity column
-_STATUS_ACTIVITY_STYLE: dict[SessionStatus, tuple[str, str]] = {
-    SessionStatus.WAITING_PERMISSION: ("bold #ff3333", " \u26a0\u26a0\u26a0"),  # ⚠⚠⚠
-    SessionStatus.EXECUTING: ("#3399ff", ""),
-    SessionStatus.THINKING: ("#00ff66", ""),
-    SessionStatus.SUBAGENT_RUNNING: ("#cc66ff", ""),
+# Statuses that paint the ENTIRE row in a single color (with blink on icon)
+_FULL_ROW_COLOR: dict[SessionStatus, str] = {
+    SessionStatus.THINKING: "#00ff66",       # green
+    SessionStatus.EXECUTING: "#00ff66",      # green (same as thinking — actively working)
+    SessionStatus.SUBAGENT_RUNNING: "#cc66ff",  # purple
+    SessionStatus.WAITING_PERMISSION: "#ff3333",  # red
+    SessionStatus.TERMINATED: "#3399ff",     # blue
 }
 
 
@@ -58,7 +59,6 @@ class SessionRow(Static, can_focus=True):
         s = self.session
         status = s.effective_status
         icon = STATUS_ICONS.get(status, "?")
-        color = STATUS_COLORS.get(status, "#666666")
         label = STATUS_LABELS.get(status, "???")
 
         project = s.project_name[:18]
@@ -81,31 +81,34 @@ class SessionRow(Static, can_focus=True):
         )
 
         idx = self._row_index
-        proj_color = SESSION_COLORS[(idx - 1) % len(SESSION_COLORS)] if idx > 0 else SESSION_COLORS[0]
+        row_color = _FULL_ROW_COLOR.get(status)
 
-        # Activity styling based on status
-        style_info = _STATUS_ACTIVITY_STYLE.get(status)
-        act_color = style_info[0] if style_info else color
-        act_suffix = style_info[1] if style_info else ""
-
-        # Permission rows get LOUD styling
-        if status == SessionStatus.WAITING_PERMISSION:
+        if row_color:
+            # Full-row coloring: entire row painted in status color
+            blink = " blink" if status in (
+                SessionStatus.THINKING, SessionStatus.EXECUTING,
+                SessionStatus.WAITING_PERMISSION, SessionStatus.SUBAGENT_RUNNING,
+            ) else ""
+            suffix = " \u26a0\u26a0\u26a0" if status == SessionStatus.WAITING_PERMISSION else ""
             line1 = (
-                f" [bold #ff3333]{idx:>2}[/]  "
-                f"[bold #ff3333 blink]{icon} {label:<5s}[/]    "
-                f"[bold {proj_color}]{project:<18s}[/]  "
-                f"[#3399ff]{branch:<10s}[/]  "
-                f"[bold #ff3333]{activity:<36s}{act_suffix}[/]  "
-                f"[#ff6666]{cpu:>5s}[/]  "
-                f"[#ff6666]{elapsed:>7s}[/]"
+                f" [{row_color}]{idx:>2}[/]  "
+                f"[{row_color}{blink}]{icon} {label:<5s}[/]    "
+                f"[bold {row_color}]{project:<18s}[/]  "
+                f"[{row_color}]{branch:<10s}[/]  "
+                f"[{row_color}]{activity:<36s}{suffix}[/]  "
+                f"[{row_color}]{cpu:>5s}[/]  "
+                f"[{row_color}]{elapsed:>7s}[/]"
             )
         else:
+            # IDLE / UNKNOWN: use palette color for project, dim for the rest
+            color = STATUS_COLORS.get(status, "#666666")
+            proj_color = SESSION_COLORS[(idx - 1) % len(SESSION_COLORS)] if idx > 0 else SESSION_COLORS[0]
             line1 = (
                 f" [{color}]{idx:>2}[/]  "
                 f"[{color}]{icon} {label:<5s}[/]    "
                 f"[bold {proj_color}]{project:<18s}[/]  "
                 f"[#3399ff]{branch:<10s}[/]  "
-                f"[{act_color}]{activity:<36s}{act_suffix}[/]  "
+                f"[{color}]{activity:<36s}[/]  "
                 f"[#999999]{cpu:>5s}[/]  "
                 f"[#666666]{elapsed:>7s}[/]"
             )
@@ -114,7 +117,8 @@ class SessionRow(Static, can_focus=True):
         prompt = self._get_prompt()
         if prompt:
             truncated = prompt[:70]
-            line2 = f"      [{proj_color}]\u2514\u2500[/] [italic #888888]{truncated}[/]"
+            prompt_color = row_color or "#888888"
+            line2 = f"      [{prompt_color}]\u2514\u2500[/] [italic {prompt_color}]{truncated}[/]"
             return f"{line1}\n{line2}"
 
         return line1
