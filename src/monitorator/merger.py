@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import time
+
+from monitorator.models import MergedSession, ProcessInfo, SessionState, SessionStatus
+
+STALE_THRESHOLD_SECONDS = 300  # 5 minutes
+CPU_OVERRIDE_THRESHOLD = 10.0  # percent — CPU must exceed this to go IDLE→THINKING
+CPU_DROP_THRESHOLD = 3.0  # percent — CPU must drop below this to go THINKING→IDLE
+STATUS_HOLD_SECONDS = 15.0  # seconds — hold active status to prevent flicker
+
+_ACTIVE_STATUSES = {SessionStatus.THINKING, SessionStatus.EXECUTING, SessionStatus.SUBAGENT_RUNNING}
+
+
+class SessionMerger:
+    def __init__(self) -> None:
+        self._prev_status: dict[str, SessionStatus] = {}
+        self._prev_active_time: dict[str, float] = {}
+
+    def merge(
+        self,
+        hook_states: list[SessionState],
+        processes: list[ProcessInfo],
+    ) -> list[MergedSession]:
+        now = time.time()
+        results: list[MergedSession] = []
+        matched_process_indices: set[int] = set()
+
+        for state in hook_states:
+            proc = self._find_matching_process(state, processes, matched_process_indices)
+            effective_status = state.status
+            is_stale = self._check_stale(state, proc, now)
+
+            # Track when session was last in an active state
+            if effective_status in _ACTIVE_STATUSES:
+                self._prev_active_time[state.session_id] = state.updated_at or now
+
+            if proc is not None and effective_status == SessionStatus.IDLE:
+                # Time-based hold: if recently active, keep THINKING to prevent flicker
+                last_active = self._prev_active_time.get(state.session_id, 0)
+                recently_active = (now - last_active) < STATUS_HOLD_SECONDS
+                prev = self._prev_status.get(state.session_id)
+
+                if prev in _ACTIVE_STATUSES and recently_active:
+                    effective_status = SessionStatus.THINKING
+                elif prev == SessionStatus.THINKING and proc.cpu_percent > CPU_DROP_THRESHOLD:
+                    effective_status = SessionStatus.THINKING
+                elif proc.cpu_percent > CPU_OVERRIDE_THRESHOLD:
+                    effective_status = SessionStatus.THINKING
+
+            self._prev_status[state.session_id] = effective_status
+            results.append(MergedSession(
+                session_id=state.session_id,
+                hook_state=state,
+                process_info=proc,
+                effective_status=effective_status,
+                is_stale=is_stale,
+            ))
+
+        # Add unmatched processes — each is a real Claude session
+        for i, proc in enumerate(processes):
+            if i in matched_process_indices:
+                continue
+            if not proc.cwd:
+                continue
+            session_id = f"proc-{proc.pid}"
+            prev = self._prev_status.get(session_id)
+            if prev == SessionStatus.THINKING and proc.cpu_percent > CPU_DROP_THRESHOLD:
+                effective_status = SessionStatus.THINKING
+            elif proc.cpu_percent > CPU_OVERRIDE_THRESHOLD:
+                effective_status = SessionStatus.THINKING
+            else:
+                effective_status = SessionStatus.IDLE
+            self._prev_status[session_id] = effective_status
+            results.append(MergedSession(
+                session_id=session_id,
+                hook_state=None,
+                process_info=proc,
+                effective_status=effective_status,
+                is_stale=False,
+            ))
+
+        return results
+
+    def _find_matching_process(
+        self,
+        state: SessionState,
+        processes: list[ProcessInfo],
+        matched: set[int],
+    ) -> ProcessInfo | None:
+        for i, proc in enumerate(processes):
+            if i in matched:
+                continue
+            if proc.cwd and state.cwd and proc.cwd == state.cwd:
+                matched.add(i)
+                return proc
+        return None
+
+    def _check_stale(
+        self,
+        state: SessionState,
+        proc: ProcessInfo | None,
+        now: float,
+    ) -> bool:
+        if proc is not None:
+            return False
+        updated = state.updated_at or state.timestamp or 0
+        return (now - updated) > STALE_THRESHOLD_SECONDS

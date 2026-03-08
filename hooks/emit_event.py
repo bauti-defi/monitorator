@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+"""
+Monitorator hook for Claude Code.
+Reads event JSON from stdin, writes session state to ~/.monitorator/sessions/.
+
+STDLIB ONLY - no third-party imports. Must complete <100ms.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+
+def get_sessions_dir() -> Path:
+    override = os.environ.get("MONITORATOR_SESSIONS_DIR")
+    if override:
+        return Path(override)
+    return Path.home() / ".monitorator" / "sessions"
+
+
+def read_existing(sessions_dir: Path, session_id: str) -> dict[str, object]:
+    path = sessions_dir / f"{session_id}.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def truncate(text: str, max_len: int = 200) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."
+
+
+def summarize_tool_input(tool_input: object) -> str:
+    if not isinstance(tool_input, dict):
+        return str(tool_input)[:200]
+    parts: list[str] = []
+    for key, val in tool_input.items():
+        val_str = str(val)
+        if len(val_str) > 80:
+            val_str = val_str[:80] + "..."
+        parts.append(f"{key}: {val_str}")
+    return truncate(", ".join(parts))
+
+
+def project_name_from_cwd(cwd: str) -> str:
+    return cwd.rstrip("/").rsplit("/", 1)[-1] if cwd else "unknown"
+
+
+def detect_git_branch(cwd: str) -> str | None:
+    """Detect the current git branch for a directory. Returns None if not a git repo."""
+    if not cwd:
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0:
+            branch = result.stdout.strip()
+            return branch if branch else None
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def atomic_write(sessions_dir: Path, session_id: str, data: dict[str, object]) -> None:
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    target = sessions_dir / f"{session_id}.json"
+    fd, tmp_path = tempfile.mkstemp(dir=sessions_dir, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp_path, target)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def main() -> None:
+    try:
+        raw = sys.stdin.read()
+        if not raw.strip():
+            return
+        event = json.loads(raw)
+    except (json.JSONDecodeError, OSError):
+        return
+
+    event_type: str = event.get("type", "")
+    session_id: str = event.get("session_id", "")
+    cwd: str = event.get("cwd", "")
+
+    if not session_id:
+        return
+
+    sessions_dir = get_sessions_dir()
+    now = time.time()
+
+    existing = read_existing(sessions_dir, session_id)
+
+    state: dict[str, object] = {
+        "session_id": session_id,
+        "cwd": cwd or existing.get("cwd", ""),
+        "project_name": existing.get("project_name") or project_name_from_cwd(cwd),
+        "status": existing.get("status", "unknown"),
+        "last_event": event_type,
+        "timestamp": existing.get("timestamp", now),
+        "updated_at": now,
+        "git_branch": existing.get("git_branch"),
+        "last_tool": existing.get("last_tool"),
+        "last_tool_input_summary": existing.get("last_tool_input_summary"),
+        "last_prompt_summary": existing.get("last_prompt_summary"),
+        "subagent_count": int(existing.get("subagent_count", 0)),
+        "permission_mode": existing.get("permission_mode"),
+    }
+
+    # Detect git branch on every event
+    effective_cwd = str(state.get("cwd", ""))
+    if effective_cwd:
+        branch = detect_git_branch(effective_cwd)
+        if branch:
+            state["git_branch"] = branch
+
+    if event_type == "SessionStart":
+        state["status"] = "idle"
+        state["timestamp"] = now
+        state["project_name"] = project_name_from_cwd(cwd)
+
+    elif event_type == "UserPromptSubmit":
+        state["status"] = "thinking"
+        prompt = event.get("prompt", "")
+        if prompt:
+            state["last_prompt_summary"] = truncate(str(prompt))
+
+    elif event_type == "PreToolUse":
+        state["status"] = "executing"
+        tool_name = event.get("tool_name", "")
+        state["last_tool"] = tool_name
+        tool_input = event.get("tool_input")
+        if tool_input:
+            state["last_tool_input_summary"] = summarize_tool_input(tool_input)
+
+    elif event_type == "PostToolUse":
+        state["status"] = "thinking"
+
+    elif event_type in ("Stop", "SessionEnd"):
+        state["status"] = "terminated"
+
+    elif event_type == "Notification":
+        message = str(event.get("message", ""))
+        if "permission" in message.lower() or "Permission" in message:
+            state["status"] = "waiting_permission"
+
+    elif event_type == "SubagentStart":
+        count = int(state.get("subagent_count", 0)) + 1
+        state["subagent_count"] = count
+        state["status"] = "subagent_running"
+
+    elif event_type == "SubagentStop":
+        count = max(0, int(state.get("subagent_count", 0)) - 1)
+        state["subagent_count"] = count
+        if count > 0:
+            state["status"] = "subagent_running"
+        else:
+            state["status"] = "thinking"
+
+    atomic_write(sessions_dir, session_id, state)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,144 @@
+/* ═══════════════════════════════════════════════════════════
+   MONITORATOR  -  DexScreener Table Theme (v2)
+   ───────────────────────────────────────────────────────────
+   Palette
+     bg-base:   #0a0a0a   (near-black)
+     bg-raised: #111111   (footer surface)
+     bg-panel:  #0e0e0e   (detail panel)
+     accent:    #ffcc00   (bright yellow)
+     accent-bg: #1a1a00   (dark amber tint)
+     amber-dim: #333300   (dark amber border / scrollbar idle)
+     separator: #1a1a1a   (row dividers)
+     text:      #cccccc   (default body)
+     text-hi:   #ffffff   (focused row text)
+     warn:      #ff3333   (red warnings)
+     info:      #3399ff   (blue informational)
+     hover:     #151515   (row hover surface)
+     green:     #00ff66   (active/thinking)
+     purple:    #cc66ff   (subagent)
+   ═══════════════════════════════════════════════════════════ */
+
+
+/* ─── Screen ─── */
+
+Screen {
+    background: #0a0a0a;
+    color: #cccccc;
+}
+
+
+/* ─── Header Banner (bordered box) ─── */
+
+HeaderBanner {
+    dock: top;
+    height: 5;
+    background: #0a0a0a;
+    color: #ffcc00;
+    padding: 0 1;
+}
+
+
+/* ─── Column Header ─── */
+
+ColumnHeader {
+    dock: top;
+    height: 2;
+    background: #0a0a0a;
+    color: #666666;
+    padding: 0 1;
+}
+
+
+/* ─── Session List (scrollable container) ─── */
+
+#session-list {
+    height: 1fr;
+    min-height: 4;
+    background: #0a0a0a;
+    scrollbar-size: 1 1;
+    scrollbar-color: #333300;
+    scrollbar-color-hover: #ffcc00;
+    scrollbar-color-active: #ffcc00;
+    scrollbar-background: #0a0a0a;
+    scrollbar-background-hover: #111111;
+    scrollbar-background-active: #111111;
+}
+
+
+/* ─── Session Rows ─── */
+
+SessionRow {
+    height: auto;
+    background: #0a0a0a;
+    color: #cccccc;
+    padding: 0 1;
+    margin: 0;
+    border-bottom: solid #111111;
+}
+
+SessionRow:hover {
+    background: #151515;
+}
+
+SessionRow:focus {
+    background: #1a1a00;
+    color: #ffffff;
+    border-left: thick #ffcc00;
+}
+
+
+/* ─── Detail Panel ─── */
+
+DetailPanel {
+    dock: bottom;
+    height: auto;
+    min-height: 5;
+    max-height: 10;
+    background: #0e0e0e;
+    color: #cccccc;
+    border-top: double #ffcc00;
+    padding: 0 1;
+}
+
+DetailPanel .detail-label {
+    color: #ffcc00;
+    text-style: bold;
+}
+
+DetailPanel .detail-value {
+    color: #cccccc;
+}
+
+DetailPanel .detail-warn {
+    color: #ff3333;
+    text-style: bold;
+}
+
+DetailPanel .detail-info {
+    color: #3399ff;
+}
+
+
+/* ─── Footer ─── */
+
+Footer {
+    background: #111111;
+    color: #666666;
+}
+
+Footer > .footer--highlight {
+    background: #1a1a00;
+    color: #ffcc00;
+}
+
+Footer > .footer--key {
+    background: #1a1a00;
+    color: #ffcc00;
+    text-style: bold;
+}
+
+Footer > .footer--highlight-key {
+    background: #ffcc00;
+    color: #000000;
+    text-style: bold;
+}
