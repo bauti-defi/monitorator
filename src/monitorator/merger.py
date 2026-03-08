@@ -8,6 +8,8 @@ STALE_THRESHOLD_SECONDS = 300  # 5 minutes
 CPU_OVERRIDE_THRESHOLD = 10.0  # percent — CPU must exceed this to go IDLE→THINKING
 CPU_DROP_THRESHOLD = 3.0  # percent — CPU must drop below this to go THINKING→IDLE
 STATUS_HOLD_SECONDS = 15.0  # seconds — hold active status to prevent flicker
+HOOKLESS_STALE_ELAPSED = 3600  # 1 hour — hookless process idle this long = stale
+HOOKLESS_STALE_CPU = 1.0  # percent — below this CPU, hookless process considered idle
 
 _ACTIVE_STATUSES = {SessionStatus.THINKING, SessionStatus.EXECUTING, SessionStatus.SUBAGENT_RUNNING}
 
@@ -71,16 +73,31 @@ class SessionMerger:
                 effective_status = SessionStatus.THINKING
             else:
                 effective_status = SessionStatus.IDLE
+            is_stale = (
+                proc.cpu_percent < HOOKLESS_STALE_CPU
+                and proc.elapsed_seconds > HOOKLESS_STALE_ELAPSED
+            )
             self._prev_status[session_id] = effective_status
             results.append(MergedSession(
                 session_id=session_id,
                 hook_state=None,
                 process_info=proc,
                 effective_status=effective_status,
-                is_stale=False,
+                is_stale=is_stale,
             ))
 
         return results
+
+    @staticmethod
+    def _cwds_related(cwd_a: str, cwd_b: str) -> bool:
+        """Check if two paths are equal or one is a parent of the other."""
+        # Normalize trailing slashes
+        a = cwd_a.rstrip("/")
+        b = cwd_b.rstrip("/")
+        if a == b:
+            return True
+        # Check parent/child relationship (must be a path boundary)
+        return a.startswith(b + "/") or b.startswith(a + "/")
 
     def _find_matching_process(
         self,
@@ -91,7 +108,7 @@ class SessionMerger:
         for i, proc in enumerate(processes):
             if i in matched:
                 continue
-            if proc.cwd and state.cwd and proc.cwd == state.cwd:
+            if proc.cwd and state.cwd and self._cwds_related(proc.cwd, state.cwd):
                 matched.add(i)
                 return proc
         return None

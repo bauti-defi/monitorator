@@ -203,6 +203,94 @@ class TestSessionMerger:
         merged = merger.merge(states, procs)
         assert merged[0].effective_status == SessionStatus.IDLE
 
+    def test_hookless_process_stale_when_idle_long_time(self) -> None:
+        """Hookless process with 0% CPU and >1h uptime should be stale."""
+        states: list[SessionState] = []
+        processes = [ProcessInfo(
+            pid=100, cpu_percent=0.0, elapsed_seconds=3700,  # >1h
+            cwd="/tmp/proj", command="claude",
+        )]
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert merged[0].is_stale
+
+    def test_hookless_process_not_stale_when_active(self) -> None:
+        """Hookless process with high CPU should NOT be stale regardless of uptime."""
+        states: list[SessionState] = []
+        processes = [ProcessInfo(
+            pid=100, cpu_percent=15.0, elapsed_seconds=90000,  # 25h but active
+            cwd="/tmp/proj", command="claude",
+        )]
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert not merged[0].is_stale
+
+    def test_hookless_process_not_stale_when_young(self) -> None:
+        """Hookless process with low CPU but <1h uptime should NOT be stale."""
+        states: list[SessionState] = []
+        processes = [ProcessInfo(
+            pid=100, cpu_percent=0.0, elapsed_seconds=600,  # 10 min
+            cwd="/tmp/proj", command="claude",
+        )]
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert not merged[0].is_stale
+
+    def test_match_hook_subdirectory_of_process_cwd(self) -> None:
+        """Hook cwd that is a subdirectory of process cwd should match."""
+        states = [SessionState(
+            session_id="sub1",
+            cwd="/Users/beib/projects/bbmedia/projects/podcast",
+            status=SessionStatus.EXECUTING,
+            updated_at=time.time(),
+        )]
+        processes = [ProcessInfo(
+            pid=100, cpu_percent=15.0, elapsed_seconds=60,
+            cwd="/Users/beib/projects/bbmedia",
+            command="claude",
+        )]
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert len(merged) == 1
+        assert merged[0].process_info is not None
+        assert merged[0].process_info.pid == 100
+
+    def test_match_process_subdirectory_of_hook_cwd(self) -> None:
+        """Process cwd that is a subdirectory of hook cwd should also match."""
+        states = [SessionState(
+            session_id="sub2",
+            cwd="/Users/beib/projects/bbmedia",
+            status=SessionStatus.THINKING,
+            updated_at=time.time(),
+        )]
+        processes = [ProcessInfo(
+            pid=200, cpu_percent=10.0, elapsed_seconds=60,
+            cwd="/Users/beib/projects/bbmedia/projects/podcast",
+            command="claude",
+        )]
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert len(merged) == 1
+        assert merged[0].process_info is not None
+
+    def test_no_match_unrelated_paths(self) -> None:
+        """Unrelated paths should not match even with common prefix."""
+        states = [SessionState(
+            session_id="unrel",
+            cwd="/Users/beib/projects/foo",
+            status=SessionStatus.IDLE,
+            updated_at=time.time(),
+        )]
+        processes = [ProcessInfo(
+            pid=300, cpu_percent=5.0, elapsed_seconds=60,
+            cwd="/Users/beib/projects/foobar",
+            command="claude",
+        )]
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        # Should NOT match — foobar is not a parent/child of foo
+        assert len(merged) == 2
+
     def test_multiple_sessions(self) -> None:
         states = [
             SessionState(session_id="s1", cwd="/a", status=SessionStatus.THINKING, updated_at=time.time()),
