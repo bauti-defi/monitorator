@@ -7,6 +7,7 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.binding import Binding
+from textual.widgets import Footer
 
 from monitorator.models import MergedSession, SessionStatus
 from monitorator.merger import SessionMerger
@@ -15,7 +16,7 @@ from monitorator.scanner import ProcessScanner
 from monitorator.state_store import StateStore
 from monitorator.notifier import Notifier
 from monitorator.terminal_opener import open_terminal_for_pid
-from monitorator.tui.header_banner import HeaderBanner
+from monitorator.tui.header_banner import HeaderBanner, RefreshRequested
 from monitorator.tui.column_header import ColumnHeader
 from monitorator.tui.help_screen import HelpScreen
 from monitorator.tui.session_row import SessionRow
@@ -75,6 +76,7 @@ class MonitoratorApp(App[None]):
         yield ColumnHeader()
         yield VerticalScroll(id="session-list")
         yield DetailPanel()
+        yield Footer()
 
     def on_mount(self) -> None:
         self._refresh()
@@ -209,6 +211,10 @@ class MonitoratorApp(App[None]):
         """Fast visual-only refresh: update sprite animation frames without I/O."""
         for card in self._cards.values():
             card.refresh_content()
+
+    def on_refresh_requested(self, message: RefreshRequested) -> None:
+        """Handle click-to-refresh from HeaderBanner."""
+        self._refresh()
 
     def action_refresh(self) -> None:
         self._refresh()

@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from monitorator.models import MergedSession, SessionState, SessionStatus
-from monitorator.tui.header_banner import HeaderBanner, count_sessions
+from monitorator.tui.header_banner import HeaderBanner, count_sessions, RefreshRequested
 
 
 def make_merged(
@@ -147,6 +147,14 @@ class TestHeaderBanner:
     def test_no_render_content_override(self) -> None:
         """CRITICAL: HeaderBanner must NOT define _render_content."""
         assert "_render_content" not in HeaderBanner.__dict__
+
+    def test_has_on_click_handler(self) -> None:
+        """HeaderBanner should have an on_click handler for refresh."""
+        assert hasattr(HeaderBanner, "on_click")
+
+    def test_refresh_requested_message_exists(self) -> None:
+        """RefreshRequested message class should exist for click-to-refresh."""
+        assert issubclass(RefreshRequested, object)
 
 
 # ── Banner layout tests ────────────────────────────────────────

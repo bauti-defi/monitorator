@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from textual.message import Message
 from textual.widgets import Static
 
 from monitorator.models import MergedSession, SessionStatus
@@ -16,6 +17,10 @@ _GHOST_GRID = SPRITE_TEMPLATES[1]
 _GHOST_PALETTE = {2: "#ffcc00", 3: "#ffffff", 4: "#0a0a0a"}
 
 _GAP = "  "
+
+
+class RefreshRequested(Message):
+    """Posted when the user clicks the header banner to request a refresh."""
 
 
 def count_sessions(sessions: list[MergedSession]) -> dict[str, int]:
@@ -68,6 +73,10 @@ class HeaderBanner(Static):
         line5 = f"{ghost[4]}"
 
         self.update(f"{line1}\n{line2}\n{line3}\n{line4}\n{line5}")
+
+    def on_click(self) -> None:
+        """Click anywhere on the header to trigger a refresh."""
+        self.post_message(RefreshRequested())
 
     def update_counts(self, sessions: list[MergedSession]) -> None:
         """Recompute stats from live session list and re-render."""
