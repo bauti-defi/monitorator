@@ -9,8 +9,10 @@ STALE_THRESHOLD_SECONDS = 300  # 5 minutes
 CPU_OVERRIDE_THRESHOLD = 10.0  # percent — CPU must exceed this to go IDLE→THINKING
 CPU_DROP_THRESHOLD = 3.0  # percent — CPU must drop below this to go THINKING→IDLE
 STATUS_HOLD_SECONDS = 15.0  # seconds — hold active status to prevent flicker
+ACTIVE_NO_PROCESS_TIMEOUT = 60.0  # seconds — terminate active sessions with no process
 
 _ACTIVE_STATUSES = {SessionStatus.THINKING, SessionStatus.EXECUTING, SessionStatus.SUBAGENT_RUNNING}
+_ALL_ACTIVE_STATUSES = _ACTIVE_STATUSES | {SessionStatus.WAITING_PERMISSION}
 
 
 class SessionMerger:
@@ -39,6 +41,12 @@ class SessionMerger:
             proc = self._find_matching_process(state, processes, matched_process_indices)
             effective_status = state.status
             is_stale = self._check_stale(state, proc, now)
+
+            # No matching process + active status + old enough → session is dead
+            if proc is None and effective_status in _ALL_ACTIVE_STATUSES:
+                age = now - (state.updated_at or state.timestamp or 0)
+                if age > ACTIVE_NO_PROCESS_TIMEOUT:
+                    effective_status = SessionStatus.TERMINATED
 
             # Track when session was last in an active state
             if effective_status in _ACTIVE_STATUSES:

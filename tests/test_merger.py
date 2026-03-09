@@ -82,6 +82,47 @@ class TestSessionMerger:
         merged = merger.merge(states, processes)
         assert merged[0].effective_status == SessionStatus.WAITING_PERMISSION
 
+    def test_active_no_process_old_becomes_terminated(self) -> None:
+        """Active status + no process + age > 60s = TERMINATED."""
+        old_time = time.time() - 90  # 90 seconds ago
+        states = [SessionState(
+            session_id="dead-perm",
+            cwd="/tmp/proj",
+            status=SessionStatus.WAITING_PERMISSION,
+            updated_at=old_time,
+        )]
+        processes: list[ProcessInfo] = []
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert merged[0].effective_status == SessionStatus.TERMINATED
+
+    def test_active_no_process_fresh_stays(self) -> None:
+        """Active status + no process + age < 60s = keep status (process might be starting)."""
+        states = [SessionState(
+            session_id="fresh-perm",
+            cwd="/tmp/proj",
+            status=SessionStatus.WAITING_PERMISSION,
+            updated_at=time.time() - 10,  # 10 seconds ago
+        )]
+        processes: list[ProcessInfo] = []
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert merged[0].effective_status == SessionStatus.WAITING_PERMISSION
+
+    def test_thinking_no_process_old_becomes_terminated(self) -> None:
+        """THINKING + no process + age > 60s = TERMINATED."""
+        old_time = time.time() - 90
+        states = [SessionState(
+            session_id="dead-think",
+            cwd="/tmp/proj",
+            status=SessionStatus.THINKING,
+            updated_at=old_time,
+        )]
+        processes: list[ProcessInfo] = []
+        merger = SessionMerger()
+        merged = merger.merge(states, processes)
+        assert merged[0].effective_status == SessionStatus.TERMINATED
+
     def test_stale_detection_no_process(self) -> None:
         """No update in 5min + no matching process = stale."""
         old_time = time.time() - 400  # >5 min ago
